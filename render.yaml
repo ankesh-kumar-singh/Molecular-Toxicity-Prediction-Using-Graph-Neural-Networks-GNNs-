@@ -1,0 +1,29 @@
+# render.yaml
+# Place this at the ROOT of your GitHub repo (tox21/)
+# Render reads this automatically when you connect your repo
+
+services:
+  - type: web
+    name: tox21-api
+    runtime: python
+    region: oregon
+    plan: free
+    rootDir: backend
+
+    buildCommand: |
+      pip install --upgrade pip
+      pip install torch==2.1.0+cpu \
+        --extra-index-url https://download.pytorch.org/whl/cpu
+      pip install torch-scatter torch-sparse torch-geometric \
+        -f https://data.pyg.org/whl/torch-2.1.0+cpu.html
+      pip install -r requirements.txt
+
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+
+    envVars:
+      - key: CHECKPOINT_DIR
+        value: /opt/render/project/src/results/checkpoints
+      - key: CONFIG_PATH
+        value: /opt/render/project/src/configs/config.yaml
+      - key: PYTHON_VERSION
+        value: "3.11.0"

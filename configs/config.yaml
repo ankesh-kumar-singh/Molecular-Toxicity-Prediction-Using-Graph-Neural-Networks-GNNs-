@@ -1,0 +1,41 @@
+# ─────────────────────────────────────────────
+#  Tox21 GNN Configuration
+# ─────────────────────────────────────────────
+
+data:
+  root: "./data/tox21"
+  val_split: 0.1
+  test_split: 0.1
+  random_seed: 42
+
+model:
+  type: "gin"          # gcn | gat | gin
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  num_tasks: 12        # Tox21 has 12 binary tasks
+  readout: "mean"      # mean | sum | max | attention
+
+training:
+  epochs: 100
+  batch_size: 64
+  learning_rate: 0.001
+  weight_decay: 1e-5
+  patience: 20         # early stopping patience
+  scheduler: "cosine"  # cosine | step | none
+  pos_weight: 10.0     # BCEWithLogitsLoss positive class weight
+
+gat:
+  heads: 4
+  concat: true
+
+gin:
+  eps: 0.0
+  train_eps: true
+  mlp_layers: 2
+
+logging:
+  log_dir: "./results/logs"
+  checkpoint_dir: "./results/checkpoints"
+  plot_dir: "./results/plots"
+  log_every: 5

@@ -1,0 +1,78 @@
+# ── Python ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+
+# ── Virtual environments ──────────────────────────────────────
+venv/
+env/
+.venv/
+ENV/
+
+# ── Jupyter ───────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ── Data (re-download with download_data.py) ──────────────────
+data/tox21/train.csv
+data/tox21/val.csv
+data/tox21/test.csv
+data/tox21/tox21.csv.gz
+
+# ── Model checkpoints (commit only if <100MB) ─────────────────
+# results/checkpoints/     ← uncomment to ignore all checkpoints
+# Keep specific ones:
+
+
+# ── Generated results ─────────────────────────────────────────
+results/logs/
+results/plots/
+results/best_hyperparams.yaml
+results/test_results_*.json
+
+# ── Frontend ──────────────────────────────────────────────────
+frontend/node_modules/
+frontend/build/
+frontend/.env.local
+frontend/.env.production
+frontend/.env.development.local
+frontend/.env.test.local
+
+# ── Environment files ─────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── IDEs ──────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*.suo
+*.user
+.project
+.classpath
+
+# ── OS ────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ── Logs ──────────────────────────────────────────────────────
+*.log
+logs/
+tensorboard/
+
+# ── Optuna ────────────────────────────────────────────────────
+*.db
+optuna.db
