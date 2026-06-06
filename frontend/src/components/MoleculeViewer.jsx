@@ -1,5 +1,5 @@
 // src/components/MoleculeViewer.jsx
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 let rdkitPromise = null;
 
@@ -20,7 +20,6 @@ function loadRDKit() {
 }
 
 export default function MoleculeViewer({ smiles, width = 300, height = 220, theme = "dark" }) {
-  const canvasRef         = useRef(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [svg, setSvg]     = useState(null);
