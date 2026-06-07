@@ -1,64 +1,114 @@
 // src/components/MoleculeViewer.jsx
-import { useEffect, useRef, useState } from "react";
+// Loads RDKit via npm package (bundled — no CDN dependency)
 
-let rdkitPromise = null;
+import { useEffect, useState } from "react";
 
-function loadRDKit() {
-  if (!rdkitPromise) {
-    rdkitPromise = new Promise((resolve, reject) => {
-      if (window.RDKit) { resolve(window.RDKit); return; }
-      const script = document.createElement("script");
-      script.src = "https://unpkg.com/@rdkit/rdkit@2023.9.4/Code/MinimalLib/dist/RDKit_minimal.js";
-      script.onload = () => window.initRDKitModule().then(rdk => {
-        window.RDKit = rdk; resolve(rdk);
-      }).catch(reject);
-      script.onerror = reject;
-      document.head.appendChild(script);
+let rdkitInstance = null;
+let rdkitLoading  = false;
+let rdkitCallbacks = [];
+
+function getRDKit() {
+  return new Promise((resolve, reject) => {
+    // Already loaded
+    if (rdkitInstance) { resolve(rdkitInstance); return; }
+
+    // Queue callback if loading in progress
+    rdkitCallbacks.push({ resolve, reject });
+    if (rdkitLoading) return;
+
+    rdkitLoading = true;
+
+    // Dynamically import from npm package
+    import("@rdkit/rdkit").then((mod) => {
+      const initRDKit = mod.default || mod;
+      return initRDKit();
+    }).then((rdk) => {
+      rdkitInstance = rdk;
+      rdkitCallbacks.forEach(cb => cb.resolve(rdk));
+      rdkitCallbacks = [];
+    }).catch((err) => {
+      rdkitLoading = false;
+      rdkitCallbacks.forEach(cb => cb.reject(err));
+      rdkitCallbacks = [];
     });
-  }
-  return rdkitPromise;
+  });
 }
 
 export default function MoleculeViewer({ smiles, width = 300, height = 220, theme = "dark" }) {
-  const canvasRef         = useRef(null);
-  const [error, setError] = useState(null);
+  const [svg,     setSvg]     = useState(null);
   const [loading, setLoading] = useState(false);
-  const [svg, setSvg]     = useState(null);
+  const [error,   setError]   = useState(null);
 
   useEffect(() => {
-    if (!smiles) { setSvg(null); setError(null); return; }
+    if (!smiles?.trim()) {
+      setSvg(null);
+      setError(null);
+      return;
+    }
+
     setLoading(true);
     setError(null);
+    setSvg(null);
 
-    loadRDKit().then((RDKit) => {
-      const mol = RDKit.get_mol(smiles);
-      if (!mol || !mol.is_valid()) {
-        setError("Invalid SMILES");
+    getRDKit()
+      .then((RDKit) => {
+        let mol;
+        try {
+          mol = RDKit.get_mol(smiles.trim());
+        } catch {
+          setError("Could not parse SMILES");
+          setLoading(false);
+          return;
+        }
+
+        if (!mol || !mol.is_valid()) {
+          mol?.delete();
+          setError("Invalid SMILES");
+          setLoading(false);
+          return;
+        }
+
+        let svgStr;
+        try {
+          svgStr = mol.get_svg(width, height);
+        } finally {
+          mol.delete();
+        }
+
+        if (!svgStr) {
+          setError("Could not render molecule");
+          setLoading(false);
+          return;
+        }
+
+        // Make background transparent + adapt colors for theme
+        let adapted = svgStr
+          .replace(/style='background:\s*#ffffff[^']*'/gi, "style='background:transparent'")
+          .replace(/style="background:\s*#ffffff[^"]*"/gi, 'style="background:transparent"');
+
+        if (theme === "dark") {
+          adapted = adapted
+            .replace(/stroke:#000000/g, "stroke:#e8eaf0")
+            .replace(/fill:#000000/g,   "fill:#e8eaf0");
+        }
+
+        setSvg(adapted);
         setLoading(false);
-        return;
-      }
-      const svgStr = mol.get_svg(width, height);
-      mol.delete();
-
-      // Adapt colors for theme
-      const adapted = theme === "light"
-        ? svgStr.replace(/fill:#[0-9a-fA-F]{6}/g, "fill:#1a1a2e")
-        : svgStr;
-
-      setSvg(adapted);
-      setLoading(false);
-    }).catch(() => {
-      setError("RDKit unavailable");
-      setLoading(false);
-    });
+      })
+      .catch(() => {
+        setError("Could not load molecule renderer");
+        setLoading(false);
+      });
   }, [smiles, width, height, theme]);
 
-  if (!smiles) return (
-    <div className="mol-empty">
-      <div className="mol-empty-icon">⬡</div>
-      <p>Enter a SMILES string to view structure</p>
-    </div>
-  );
+  if (!smiles?.trim()) {
+    return (
+      <div className="mol-empty">
+        <div className="mol-empty-icon">⬡</div>
+        <p>Enter a SMILES string to view structure</p>
+      </div>
+    );
+  }
 
   return (
     <div className="mol-viewer">
