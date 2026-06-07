@@ -1,38 +1,10 @@
 // src/components/MoleculeViewer.jsx
-// Loads RDKit via npm package (bundled — no CDN dependency)
+// Fetches molecule SVG from backend /mol/svg endpoint
+// No WASM, no CDN — works everywhere
 
 import { useEffect, useState } from "react";
 
-let rdkitInstance = null;
-let rdkitLoading  = false;
-let rdkitCallbacks = [];
-
-function getRDKit() {
-  return new Promise((resolve, reject) => {
-    // Already loaded
-    if (rdkitInstance) { resolve(rdkitInstance); return; }
-
-    // Queue callback if loading in progress
-    rdkitCallbacks.push({ resolve, reject });
-    if (rdkitLoading) return;
-
-    rdkitLoading = true;
-
-    // Dynamically import from npm package
-    import("@rdkit/rdkit").then((mod) => {
-      const initRDKit = mod.default || mod;
-      return initRDKit();
-    }).then((rdk) => {
-      rdkitInstance = rdk;
-      rdkitCallbacks.forEach(cb => cb.resolve(rdk));
-      rdkitCallbacks = [];
-    }).catch((err) => {
-      rdkitLoading = false;
-      rdkitCallbacks.forEach(cb => cb.reject(err));
-      rdkitCallbacks = [];
-    });
-  });
-}
+const BASE = process.env.REACT_APP_API_URL || "http://localhost:8000";
 
 export default function MoleculeViewer({ smiles, width = 300, height = 220, theme = "dark" }) {
   const [svg,     setSvg]     = useState(null);
@@ -50,53 +22,21 @@ export default function MoleculeViewer({ smiles, width = 300, height = 220, them
     setError(null);
     setSvg(null);
 
-    getRDKit()
-      .then((RDKit) => {
-        let mol;
-        try {
-          mol = RDKit.get_mol(smiles.trim());
-        } catch {
-          setError("Could not parse SMILES");
-          setLoading(false);
-          return;
-        }
-
-        if (!mol || !mol.is_valid()) {
-          mol?.delete();
-          setError("Invalid SMILES");
-          setLoading(false);
-          return;
-        }
-
-        let svgStr;
-        try {
-          svgStr = mol.get_svg(width, height);
-        } finally {
-          mol.delete();
-        }
-
-        if (!svgStr) {
-          setError("Could not render molecule");
-          setLoading(false);
-          return;
-        }
-
-        // Make background transparent + adapt colors for theme
-        let adapted = svgStr
-          .replace(/style='background:\s*#ffffff[^']*'/gi, "style='background:transparent'")
-          .replace(/style="background:\s*#ffffff[^"]*"/gi, 'style="background:transparent"');
-
-        if (theme === "dark") {
-          adapted = adapted
-            .replace(/stroke:#000000/g, "stroke:#e8eaf0")
-            .replace(/fill:#000000/g,   "fill:#e8eaf0");
-        }
-
-        setSvg(adapted);
+    fetch(`${BASE}/mol/svg`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ smiles: smiles.trim(), width, height, theme }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Could not render molecule");
+        return res.text();
+      })
+      .then((svgText) => {
+        setSvg(svgText);
         setLoading(false);
       })
       .catch(() => {
-        setError("Could not load molecule renderer");
+        setError("Could not render structure");
         setLoading(false);
       });
   }, [smiles, width, height, theme]);

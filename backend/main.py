@@ -1,19 +1,5 @@
 """
 backend/main.py
-───────────────
-FastAPI backend for Tox21 GNN Molecular Toxicity Classifier.
-
-Endpoints:
-  GET  /health                 → API status + loaded models
-  GET  /models                 → model info (AUC, params, speed)
-  GET  /tasks                  → Tox21 task names + descriptions
-  POST /validate               → validate SMILES string
-  POST /predict                → single SMILES prediction
-  POST /predict/batch          → batch SMILES (JSON)
-  POST /predict/compare        → same SMILES across all models
-  POST /predict/csv            → CSV upload → CSV download
-  GET  /history                → recent predictions (in-memory)
-  DELETE /history              → clear history
 """
 
 from __future__ import annotations
@@ -36,14 +22,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-# ── Project root (one level up from backend/) ─────────────────────────────────
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from data.dataset import smiles_to_graph, ATOM_FEATURE_DIM
 from models.gnn import build_model
-
-# ─── Constants ────────────────────────────────────────────────────────────────
 
 TOX21_TASKS = [
     "NR-AR", "NR-AR-LBD", "NR-AhR", "NR-Aromatase",
@@ -89,8 +72,6 @@ CONFIG_PATH = os.environ.get(
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 MAX_HISTORY = 50
 
-# ─── State ────────────────────────────────────────────────────────────────────
-
 _model_cache: Dict[str, torch.nn.Module] = {}
 _history: deque = deque(maxlen=MAX_HISTORY)
 
@@ -114,17 +95,11 @@ def _get_model(model_name: str) -> torch.nn.Module:
     key = model_name.lower()
     if key in _model_cache:
         return _model_cache[key]
-
     ckpt_path = os.path.join(CHECKPOINT_DIR, f"best_{key.upper()}.pt")
     if not os.path.exists(ckpt_path):
-        raise HTTPException(
-            status_code=404,
-            detail=f"Checkpoint not found for '{key}'. Train first."
-        )
-
+        raise HTTPException(status_code=404, detail=f"Checkpoint not found for '{key}'.")
     cfg = _load_config()
     cfg["model"]["type"] = key
-
     model = build_model(cfg, in_dim=ATOM_FEATURE_DIM).to(DEVICE)
     ckpt  = torch.load(ckpt_path, map_location=DEVICE, weights_only=True)
     model.load_state_dict(ckpt["state_dict"])
@@ -133,12 +108,9 @@ def _get_model(model_name: str) -> torch.nn.Module:
     return model
 
 
-# ─── Inference ────────────────────────────────────────────────────────────────
-
 def _run_inference(smiles_list: List[str], model_name: str) -> List[dict]:
     from torch_geometric.data import Batch
-
-    model   = _get_model(model_name)
+    model = _get_model(model_name)
     results = []
     valid_idx, valid_graphs = [], []
 
@@ -169,7 +141,6 @@ def _run_inference(smiles_list: List[str], model_name: str) -> List[dict]:
         toxic_tasks = [t for t, v in pred_dict.items() if v >= 0.5]
         max_prob    = round(float(p.max()), 4)
         risk_level  = "high" if max_prob >= 0.5 else "moderate" if max_prob >= 0.3 else "low"
-
         results[idx] = {
             "smiles":      smiles_list[idx],
             "valid":       True,
@@ -181,7 +152,37 @@ def _run_inference(smiles_list: List[str], model_name: str) -> List[dict]:
     return results
 
 
-# ─── Lifespan ─────────────────────────────────────────────────────────────────
+def _smiles_to_svg(smiles: str, width: int = 300, height: int = 220, theme: str = "dark") -> Optional[str]:
+    """Generate SVG from SMILES using RDKit on the backend."""
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import Draw
+        from rdkit.Chem.Draw import rdMolDraw2D
+
+        mol = Chem.MolFromSmiles(smiles.strip())
+        if mol is None:
+            return None
+
+        drawer = rdMolDraw2D.MolDraw2DSVG(width, height)
+
+        # Theme-aware drawing options
+        opts = drawer.drawOptions()
+        if theme == "dark":
+            opts.backgroundColour = (0, 0, 0, 0)        # transparent
+            opts.atomLabelColour  = (0.91, 0.92, 0.94)  # light text
+            opts.bondLineColour   = (0.91, 0.92, 0.94)  # light bonds
+        else:
+            opts.backgroundColour = (0, 0, 0, 0)        # transparent
+            opts.atomLabelColour  = (0.1,  0.11, 0.18)  # dark text
+            opts.bondLineColour   = (0.1,  0.11, 0.18)  # dark bonds
+
+        drawer.DrawMolecule(mol)
+        drawer.FinishDrawing()
+        svg = drawer.GetDrawingText()
+        return svg
+    except Exception:
+        return None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -190,14 +191,12 @@ async def lifespan(app: FastAPI):
         try:
             _get_model(name)
             info = MODEL_INFO.get(name, {})
-            print(f"  ✅ Loaded {name.upper()} (AUC={info.get('val_auc','?')})")
+            print(f"  Loaded {name.upper()} (AUC={info.get('val_auc','?')})")
         except Exception as e:
-            print(f"  ⚠️  Could not load {name}: {e}")
+            print(f"  Could not load {name}: {e}")
     yield
     _model_cache.clear()
 
-
-# ─── App ──────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
     title="Tox21 GNN API",
@@ -208,13 +207,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173", "*"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ─── Schemas ──────────────────────────────────────────────────────────────────
 
 class PredictRequest(BaseModel):
     smiles: str = Field(..., example="CC(=O)Oc1ccccc1C(=O)O")
@@ -227,7 +225,12 @@ class BatchRequest(BaseModel):
 class ValidateRequest(BaseModel):
     smiles: str
 
-# ─── Routes ───────────────────────────────────────────────────────────────────
+class MolSVGRequest(BaseModel):
+    smiles: str
+    width:  int = 300
+    height: int = 220
+    theme:  str = "dark"
+
 
 @app.get("/health")
 def health():
@@ -277,6 +280,17 @@ def validate_smiles(req: ValidateRequest):
         return {"smiles": req.smiles, "valid": False, "atoms": 0, "bonds": 0}
 
 
+@app.post("/mol/svg")
+def mol_svg(req: MolSVGRequest):
+    """Generate molecule SVG on the backend using RDKit."""
+    if not req.smiles.strip():
+        raise HTTPException(400, "SMILES cannot be empty")
+    svg = _smiles_to_svg(req.smiles, req.width, req.height, req.theme)
+    if svg is None:
+        raise HTTPException(400, "Could not render molecule — invalid SMILES")
+    return Response(content=svg, media_type="image/svg+xml")
+
+
 @app.post("/predict")
 def predict_single(req: PredictRequest):
     t0     = time.time()
@@ -285,8 +299,6 @@ def predict_single(req: PredictRequest):
     result["latency_ms"] = round((time.time() - t0) * 1000, 1)
     result["id"]         = str(uuid.uuid4())[:8]
     result["timestamp"]  = time.time()
-
-    # Save to history
     _history.appendleft({**result})
     return result
 
@@ -303,47 +315,33 @@ def predict_batch(req: BatchRequest):
 
 @app.post("/predict/compare")
 def predict_compare(req: ValidateRequest):
-    """Predict same SMILES with all available models."""
     available = _list_available()
     if not available:
         raise HTTPException(404, "No models available.")
-
     comparison = {}
     for model_name in available:
         t0     = time.time()
         result = _run_inference([req.smiles], model_name)[0]
         result["latency_ms"] = round((time.time() - t0) * 1000, 1)
         comparison[model_name] = result
-
-    return {
-        "smiles":     req.smiles,
-        "models":     comparison,
-        "timestamp":  time.time(),
-    }
+    return {"smiles": req.smiles, "models": comparison, "timestamp": time.time()}
 
 
 @app.post("/predict/csv")
-async def predict_csv(
-    file:  UploadFile = File(...),
-    model: str        = Query("gin"),
-):
+async def predict_csv(file: UploadFile = File(...), model: str = Query("gin")):
     if not file.filename.endswith(".csv"):
         raise HTTPException(400, "File must be a .csv")
-
     content = await file.read()
     try:
         df = pd.read_csv(io.BytesIO(content))
     except Exception as e:
         raise HTTPException(400, f"Could not parse CSV: {e}")
-
     if "smiles" not in df.columns:
         raise HTTPException(400, "CSV must have a 'smiles' column.")
     if len(df) > 500:
         raise HTTPException(400, "Max 500 rows per CSV.")
-
     smiles_list = df["smiles"].astype(str).tolist()
     results     = _run_inference(smiles_list, model)
-
     rows = []
     for r in results:
         row = {
@@ -355,7 +353,6 @@ async def predict_csv(
         }
         row.update(r["predictions"])
         rows.append(row)
-
     out_csv = pd.DataFrame(rows).to_csv(index=False)
     return Response(
         content=out_csv,
