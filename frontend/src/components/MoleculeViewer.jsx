@@ -1,6 +1,5 @@
 // src/components/MoleculeViewer.jsx
 // Fetches molecule SVG from backend /mol/svg endpoint
-// No WASM, no CDN — works everywhere
 
 import { useEffect, useState } from "react";
 
@@ -28,14 +27,18 @@ export default function MoleculeViewer({ smiles, width = 300, height = 220, them
       body: JSON.stringify({ smiles: smiles.trim(), width, height, theme }),
     })
       .then((res) => {
-        if (!res.ok) throw new Error("Could not render molecule");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.text();
       })
       .then((svgText) => {
-        setSvg(svgText);
+        const cleaned = svgText
+          .replace(/<\?xml[^?]*\?>/g, "")
+          .replace(/<!DOCTYPE[^>]*>/g, "")
+          .trim();
+        setSvg(cleaned);
         setLoading(false);
       })
-      .catch(() => {
+      .catch((err) => {
         setError("Could not render structure");
         setLoading(false);
       });
@@ -65,7 +68,12 @@ export default function MoleculeViewer({ smiles, width = 300, height = 220, them
       )}
       {svg && !loading && (
         <div
-          className="mol-svg-wrap"
+          style={{
+            width: "100%",
+            borderRadius: "8px",
+            overflow: "hidden",
+            background: "transparent",
+          }}
           dangerouslySetInnerHTML={{ __html: svg }}
         />
       )}
